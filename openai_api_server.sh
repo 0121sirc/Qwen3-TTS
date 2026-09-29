@@ -21,7 +21,7 @@ cd "$(dirname "$0")"
 HERE="$(pwd)"
 
 # PATH (ffmpeg for mp3/flac/opus) + glibc malloc tuning
-source "$HERE/.conda_env/env.sh"
+source "$HERE/env.sh"
 
 # Default bind host: the tailscale IP, else fall back to 127.0.0.1 with a warning.
 default_host() {
@@ -167,6 +167,22 @@ cmd_start() {
     echo "Stale process $(cat "$PID_FILE") without a healthy endpoint; restarting."
     cmd_stop
   fi
+
+  # .conda_env/ is gitignored (it *is* the conda env), so a fresh clone ships no
+  # interpreter at this path. Fail with the recipe instead of letting nohup die
+  # quietly in the log.
+  if [[ ! -x "$PYTHON" ]]; then
+    echo "ERROR: Python interpreter not found at: $PYTHON" >&2
+    echo "  The conda env (.conda_env/) is not part of this checkout. Create it, then retry:" >&2
+    echo "      conda create -p .conda_env python=3.10 pip" >&2
+    echo "      .conda_env/bin/pip install -e ." >&2
+    echo "  re-run: ./openai_api_server.sh start" >&2
+    return 1
+  fi
+
+  # check_gpu_exclusive also refuses a $PORT that someone else already holds
+  # (describe_holder), which is what keeps health_ok() from answering for a
+  # process we never started.
   check_gpu_exclusive
 
   mkdir -p "$RUN_DIR"
@@ -179,16 +195,18 @@ cmd_start() {
   echo "$pid" > "$PID_FILE"
 
   # Model loading takes ~10s (2.4GB bf16 weights) -- much faster than CosyVoice.
+  # Liveness before health: a pid that never bound the socket must lose even if
+  # another process answers on this port.
   for _ in $(seq 1 120); do
-    if health_ok; then
-      echo "Up (pid $pid). Log: $LOG_FILE"
-      return 0
-    fi
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "ERROR: server exited during startup. Last log lines:" >&2
       tail -20 "$LOG_FILE" >&2 || true
       rm -f "$PID_FILE"
       return 1
+    fi
+    if health_ok; then
+      echo "Up (pid $pid). Log: $LOG_FILE"
+      return 0
     fi
     sleep 1
   done

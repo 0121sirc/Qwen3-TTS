@@ -22,7 +22,7 @@ cd "$(dirname "$0")"
 HERE="$(pwd)"
 
 # PATH (ffmpeg/ffprobe for gradio) + glibc malloc tuning
-source "$HERE/.conda_env/env.sh"
+source "$HERE/env.sh"
 
 # Default probe host: the tailscale IP, else fall back to 127.0.0.1 with a warning.
 default_host() {
@@ -170,6 +170,9 @@ cmd_start() {
     echo "Stale process $(cat "$PID_FILE") without a healthy endpoint; restarting."
     cmd_stop
   fi
+  # check_gpu_exclusive also refuses a $PORT someone else already holds
+  # (describe_holder), which is what keeps health_ok() from answering for a
+  # process we never started.
   check_gpu_exclusive
 
   if [[ ! -x "$DEMO_BIN" ]]; then
@@ -188,16 +191,18 @@ cmd_start() {
   local pid=$!
   echo "$pid" > "$PID_FILE"
 
+  # Liveness before health: a pid that never bound the socket must lose even if
+  # another process answers on this port.
   for _ in $(seq 1 120); do
-    if health_ok; then
-      echo "Up (pid $pid). Log: $LOG_FILE"
-      return 0
-    fi
     if ! kill -0 "$pid" 2>/dev/null; then
       echo "ERROR: WebUI exited during startup. Last log lines:" >&2
       tail -20 "$LOG_FILE" >&2 || true
       rm -f "$PID_FILE"
       return 1
+    fi
+    if health_ok; then
+      echo "Up (pid $pid). Log: $LOG_FILE"
+      return 0
     fi
     sleep 1
   done
