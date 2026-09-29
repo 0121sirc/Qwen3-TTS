@@ -22,3 +22,10 @@ wheels/
 .vscode/
 venv/
 env/
+.conda_env/
+pretrained_models/
+voices-ext/
+# voice reference audio stays local, same as CosyVoice: only voices/*/meta.json
+# is tracked, prompt.wav is an asset you drop in yourself
+*.wav
+
