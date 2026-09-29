@@ -25,7 +25,9 @@ env/
 .conda_env/
 pretrained_models/
 voices-ext/
-# voice reference audio stays local, same as CosyVoice: only voices/*/meta.json
-# is tracked, prompt.wav is an asset you drop in yourself
+# voices/ reference audio is runtime-required (see CosyVoice): _scan_voices()
+# skips a voice directory without prompt.*, so voices/default/prompt.wav must
+# ship or a fresh clone has no voices at all. voices-ext/ stays local.
 *.wav
+!voices/*/prompt.wav
 
